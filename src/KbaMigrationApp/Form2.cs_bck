@@ -1,0 +1,175 @@
+﻿using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+using System.ServiceModel.Description;
+using Microsoft.Xrm.Sdk;
+using Microsoft.Xrm.Sdk.Query;
+using Microsoft.Xrm.Sdk.Client;
+//using Microsoft.Xrm.Client;
+using System.IO;
+using System.Threading;
+// This namespace comes from assembly System.DirectoryServices.AccountManagement
+//using System.DirectoryServices.AccountManagement;
+// These namespaces come from assembly System.ServiceModel
+using System.ServiceModel;
+// These namespaces are found in the Microsoft.Crm.Sdk.Proxy.dll assembly
+using Microsoft.Crm.Sdk.Messages;
+// These namespaces are found in the Microsoft.Xrm.Sdk.dll assembly
+
+using Microsoft.Xrm.Sdk.Messages;
+using Microsoft.Xrm.Sdk.Metadata;
+
+using Microsoft.Xrm.Sdk.Discovery;
+// These namespaces are found in the Microsoft.Xrm.Client.dll assembly
+
+//using Microsoft.Xrm.Client.Services;
+//using System.Web.Services.Protocols;
+using System.Runtime.Serialization;
+
+using System.Windows.Forms;
+
+
+using Microsoft.Xrm.Tooling.Connector;
+
+using System.ComponentModel;
+using System.Data;
+using System.Drawing;
+
+
+namespace WindowsFormsApplication1
+{
+    public partial class Form2 : Form
+    {
+
+        public Form2()
+        {
+            InitializeComponent();
+
+
+        }
+
+        private void getcustfields_Click(object sender, EventArgs e)
+        {
+            RetrieveEntityRequest lclAEntityMetaDataRequest = new RetrieveEntityRequest();
+
+            RetrieveEntityResponse lclEntityMetaDataResponse = null;
+
+            lclAEntityMetaDataRequest.EntityFilters = Microsoft.Xrm.Sdk.Metadata.EntityFilters.Attributes;
+
+            lclAEntityMetaDataRequest.LogicalName = "kbarticle";
+
+            lclEntityMetaDataResponse = (RetrieveEntityResponse)Form1.sdk.Execute(lclAEntityMetaDataRequest);
+            Console.WriteLine("Found the following custom fields. Please select which should moved");
+            foreach (AttributeMetadata currentEntity in lclEntityMetaDataResponse.EntityMetadata.Attributes)
+            {
+                if (currentEntity.IsCustomAttribute == true)
+                {
+                    Custfieldslistbox.Items.Add(currentEntity.LogicalName.ToString());
+                }
+
+            }
+        }
+
+        private void textBox1_TextChanged(object sender, EventArgs e)
+        {
+
+        }
+
+        private void Migratekbs_Click(object sender, EventArgs e)
+        {
+            Entity knowledgearticle = new Entity("knowledgearticle");
+
+
+
+            // Query values from old article entity
+
+            QueryExpression query = new QueryExpression { EntityName = "kbarticle", ColumnSet = new ColumnSet(true) };
+            EntityCollection kbarticle = Form1.sdk.RetrieveMultiple(query);
+            foreach (var count in kbarticle.Entities)
+            {
+
+
+                // string str = count["articlexml"];
+
+                //  Console.WriteLine(count["articlexml"]);
+
+                // Query for articles that may already exist on ISH to prevent duplicates or exceptions
+                QueryExpression query2 = new QueryExpression { EntityName = "knowledgearticle", ColumnSet = new ColumnSet(new string[] { "articlepublicnumber" }) };
+                EntityCollection knowledge = Form1.sdk.RetrieveMultiple(query2);
+                query2.Criteria = new FilterExpression();
+                query2.Criteria.AddCondition("articlepublicnumber", ConditionOperator.Equal, count["number"]);
+                EntityCollection kbmngarticle = Form1.sdk.RetrieveMultiple(query2);
+                if (kbmngarticle.Entities.Count == 0)
+                {
+
+                    if (count.Attributes.Contains("number")) { knowledgearticle["articlepublicnumber"] = count["number"]; };
+
+                    //Remove the real content from the old cml format and replace unrecognizable xml tags with html
+                    //check if old content is not null and set the value to match field on new entity (ISH)
+                    if (count.Attributes.Contains("articlexml"))
+                    {
+                        string text = count["articlexml"].ToString();
+                        string cut = text.Split('[', ']')[2];
+                        Console.WriteLine("---- {0}", cut);
+                        cut = "<p>" + cut;
+                        text = cut.Replace("</div>", "</p>");
+                        text = text.Replace("<div>", "<p>");
+                        knowledgearticle["content"] = text;
+                    }
+                    Console.WriteLine(knowledgearticle["content"]);
+
+                    if (Custfieldslistbox.CheckedItems.Count != 0)
+                    {
+                        // If so, loop through all checked items and print results.  
+                        string cusfield = "";
+                        for (int x = 0; x <= Custfieldslistbox.CheckedItems.Count - 1; x++)
+                        {
+                            cusfield = Custfieldslistbox.CheckedItems[x].ToString();
+                            if (count.Attributes.Contains(cusfield)) { knowledgearticle[cusfield] = count[cusfield]; };
+                        }
+                     //   MessageBox.Show(cusfield);
+                    }
+
+
+                    // if (count.Attributes.Contains("articlexml")) { knowledgearticle["content"] = count["articlexml"]; };
+                    //   if (count.Attributes.Contains(customfield)) { knowledgearticle[customfield] = count[customfield]; };
+                    if (count.Attributes.Contains("description")) { knowledgearticle["description"] = count["description"]; };
+                    if (count.Attributes.Contains("importsequencenumber")) { knowledgearticle["importsequencenumber"] = count["importsequencenumber"]; };
+                    if (count.Attributes.Contains("keywords")) { knowledgearticle["keywords"] = count["keywords"]; };
+                    if (count.Attributes.Contains("createdon")) { knowledgearticle["overriddencreatedon"] = count["createdon"]; };
+
+                    if (count.Attributes.Contains("statecode")) { knowledgearticle["statecode"] = count["statecode"]; };
+
+                    if (count.Attributes.Contains("title")) { knowledgearticle["title"] = count["title"]; };
+
+                    //ISprumary field doesn't exist on the old articles and needs to be 1 to publish the article on ISH
+                    // knowledgearticle["Isprimary"] = 1;
+                    //Create the article on ISH
+                    Form1.sdk.Create(knowledgearticle);
+
+                    listBox1.Items.Add(count["number"] + " KB Article Created");
+
+                }
+                else
+                {
+                    listBox1.Items.Add(count["number"] + " KB Article already exists");
+                    //Console.WriteLine("{0} Already exists", count["number"]);
+
+                }
+
+                //number = count.GetAttributeValue<string>("number");
+                //articlexml = count.GetAttributeValue<string>("articlexml");
+                //Console.WriteLine(articlexml);
+            }
+           // Console.ReadKey();
+
+        }
+
+        private void button1_Click(object sender, EventArgs e)
+        {
+            Application.Exit();
+        }
+    }
+}
